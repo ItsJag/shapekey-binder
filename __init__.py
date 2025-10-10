@@ -1,10 +1,12 @@
 import bpy
 from bpy.app.handlers import persistent
-from bpy.types import FCurve, Key, Object, ShapeKey
+from bpy.props import PointerProperty
+from bpy.types import FCurve, Key, Object, Operator, Panel, PropertyGroup, ShapeKey
+from bpy.utils import register_class, unregister_class
 
 
 # region Parameters
-class SP_parameters(bpy.types.PropertyGroup):
+class SP_parameters(PropertyGroup):
     full_mirror: bpy.props.BoolProperty(
         name="Full Shapekey Mirroring",
         description="Deletes shapekeys from the binded object if they aren't in the active object",
@@ -23,9 +25,13 @@ def bind_update(self, context):
     active_object = bpy.context.object
 
     for target_object in binded_objects:
+        if target_object.type != "MESH":
+            # Shouldn't happen, but just in case
+            binded_objects.remove(target_object)
+            continue
         if active_object == target_object:
             continue
-        source_object: Object = target_object.data.get("sp_binded_object")
+        source_object = target_object.data.get("sp_binded_object")
         if not source_object:
             continue
 
@@ -61,9 +67,7 @@ def get_binded_objects() -> list[Object]:
 
 
 def get_active_shape_key_index(source_object: Object, target_object: Object):
-    index = target_object.data.shape_keys.key_blocks.find(
-        source_object.active_shape_key.name
-    )
+    index = target_object.data.shape_keys.key_blocks.find(source_object.active_shape_key.name)
     return index
 
 
@@ -73,9 +77,7 @@ def mirror_shape_key_parameters(source_object: Object, target_object: Object):
 
     # print(target_object, bpy.context.object)
     target_object.show_only_shape_key = source_object.show_only_shape_key
-    target_object.active_shape_key_index = get_active_shape_key_index(
-        source_object, target_object
-    )
+    target_object.active_shape_key_index = get_active_shape_key_index(source_object, target_object)
 
 
 def mirror_shape_keys(source_object: Object, target_object: Object):
@@ -190,11 +192,7 @@ def update_driver(shape_keys: Key, driver: FCurve, name: str):
 
 
 def remove_driver(shape_keys: Key, shape_key: ShapeKey):
-    if not (
-        driver := shape_keys.animation_data.drivers.find(
-            f'key_blocks["{shape_key.name}"].value'
-        )
-    ):
+    if not (driver := shape_keys.animation_data.drivers.find(f'key_blocks["{shape_key.name}"].value')):
         return
 
     if var := driver.driver.variables.get("sb_bind"):
@@ -215,7 +213,7 @@ class OSB_OT_bind(bpy.types.Operator):
     def poll(cls, context):
         if len(bpy.context.selected_objects) <= 1:
             cls.poll_message_set("Select more than one object.")
-            return
+            return False
 
         return True
 
@@ -229,6 +227,8 @@ class OSB_OT_bind(bpy.types.Operator):
         selected_meshes = bpy.context.selected_objects
 
         for object in selected_meshes:
+            if object.type != "MESH":
+                continue
             if not object.data:
                 continue
             if object == active_mesh:
@@ -242,7 +242,7 @@ class OSB_OT_bind(bpy.types.Operator):
         return {"FINISHED"}
 
 
-class OSB_OT_unbind(bpy.types.Operator):
+class OSB_OT_unbind(Operator):
     """Unbinds the selected meshes"""
 
     bl_idname = "osb.unbind"
@@ -273,7 +273,7 @@ class OSB_OT_unbind(bpy.types.Operator):
 
 
 # region UI
-class OSB_PT_mainpanel(bpy.types.Panel):
+class OSB_PT_mainpanel(Panel):
     bl_label = "Shapekey Binder"
     bl_description = ""
     bl_space_type = "PROPERTIES"
@@ -297,9 +297,7 @@ class OSB_PT_mainpanel(bpy.types.Panel):
 
         if bpy.context.object.data.get("sp_binded_object"):
             box = layout.box()
-            box.label(
-                text=f"Binded to: {bpy.context.object.data.get('sp_binded_object').name}"
-            )
+            box.label(text=f"Binded to: {bpy.context.object.data.get('sp_binded_object').name}")
 
 
 # endregion
@@ -307,26 +305,24 @@ class OSB_PT_mainpanel(bpy.types.Panel):
 
 # region Registration
 def register():
-    bpy.utils.register_class(SP_parameters)
-    bpy.utils.register_class(OSB_OT_bind)
-    bpy.utils.register_class(OSB_OT_unbind)
-    bpy.utils.register_class(OSB_PT_mainpanel)
+    register_class(SP_parameters)
+    register_class(OSB_OT_bind)
+    register_class(OSB_OT_unbind)
+    register_class(OSB_PT_mainpanel)
 
     bpy.app.handlers.depsgraph_update_post.append(bind_update)
 
-    bpy.types.Mesh.spparameters = bpy.props.PointerProperty(
-        type=SP_parameters, override={"LIBRARY_OVERRIDABLE"}
-    )
+    bpy.types.Mesh.spparameters = PointerProperty(type=SP_parameters, override={"LIBRARY_OVERRIDABLE"})
 
 
 def unregister():
     del bpy.types.Mesh.spparameters
 
     bpy.app.handlers.depsgraph_update_post.remove(bind_update)
-    bpy.utils.unregister_class(SP_parameters)
-    bpy.utils.unregister_class(OSB_OT_bind)
-    bpy.utils.unregister_class(OSB_OT_unbind)
-    bpy.utils.unregister_class(OSB_PT_mainpanel)
+    unregister_class(SP_parameters)
+    unregister_class(OSB_OT_bind)
+    unregister_class(OSB_OT_unbind)
+    unregister_class(OSB_PT_mainpanel)
 
 
 if __name__ == "__main__":
