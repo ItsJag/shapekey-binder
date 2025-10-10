@@ -206,7 +206,7 @@ def remove_driver(shape_keys: Key, shape_key: ShapeKey):
 
 
 # region Operators
-class OSB_OT_bind(bpy.types.Operator):
+class OSB_OT_bind(Operator):
     """Binds the selected meshes to the active one"""
 
     @classmethod
@@ -269,6 +269,36 @@ class OSB_OT_unbind(Operator):
         return {"FINISHED"}
 
 
+class OSB_OT_purge(Operator):
+    """Purges all binded objects"""
+
+    bl_idname = "osb.purge"
+    bl_label = "Purge All Binded Objects"
+    bl_description = "Unbinds all binded objects"
+    bl_options = {"REGISTER", "UNDO"}
+
+    def execute(self, context):
+        binded_objects = get_binded_objects()
+
+        for object in binded_objects:
+            if not object.data:
+                continue
+            if not object.data.get("sp_binded_object"):
+                continue
+
+            del object.data["sp_binded_object"]
+
+            if object.type != "MESH":
+                continue
+
+            # Clears shapekey drivers
+            target_shape_keys = object.data.shape_keys
+            for target_key in target_shape_keys.key_blocks:
+                remove_driver(target_shape_keys, target_key)
+
+        return {"FINISHED"}
+
+
 # endregion
 
 
@@ -287,6 +317,7 @@ class OSB_PT_mainpanel(Panel):
         col = layout.column(align=True)
         col.operator("osb.bind")
         col.operator("osb.unbind")
+        col.operator("osb.purge")
 
         if not bpy.context.object:
             return
@@ -308,6 +339,7 @@ def register():
     register_class(SP_parameters)
     register_class(OSB_OT_bind)
     register_class(OSB_OT_unbind)
+    register_class(OSB_OT_purge)
     register_class(OSB_PT_mainpanel)
 
     bpy.app.handlers.depsgraph_update_post.append(bind_update)
@@ -322,6 +354,7 @@ def unregister():
     unregister_class(SP_parameters)
     unregister_class(OSB_OT_bind)
     unregister_class(OSB_OT_unbind)
+    unregister_class(OSB_OT_purge)
     unregister_class(OSB_PT_mainpanel)
 
 
