@@ -1,7 +1,7 @@
 import bpy
 from bpy.app.handlers import persistent
 from bpy.props import PointerProperty
-from bpy.types import FCurve, Key, Object, Operator, Panel, PropertyGroup, ShapeKey
+from bpy.types import ID, FCurve, Object, Operator, Panel, PropertyGroup, ShapeKey
 from bpy.utils import register_class, unregister_class
 
 
@@ -11,6 +11,11 @@ class SP_parameters(PropertyGroup):
         name="Full Shapekey Mirroring",
         description="Deletes shapekeys from the binded object if they aren't in the active object",
         default=True,
+    )
+    drivers_only: bpy.props.BoolProperty(
+        name="Drivers only",
+        description="Only adds drivers and nothing else",
+        default=False,
     )
 
 
@@ -40,6 +45,11 @@ def bind_update(self, context):
         # Adds shapekey data if it doesn't exist already
         if not getattr(target_object.data, "shape_keys"):
             target_object.shape_key_add(name="Basis", from_mix=False)
+
+        SPPARAMETERS = target_object.data.spparameters
+        if SPPARAMETERS.drivers_only:
+            setup_shapekey_drivers(source_object, target_object)
+            continue
 
         mirror_shape_keys(source_object, target_object)
         remove_leftover_shape_keys(source_object, target_object)
@@ -84,25 +94,37 @@ def mirror_shape_keys(source_object: Object, target_object: Object):
     source_shape_keys = source_object.data.shape_keys
     target_shape_keys = target_object.data.shape_keys
 
-    if not target_shape_keys.animation_data:
+    if not getattr(target_shape_keys, "animation_data"):
         target_shape_keys.animation_data_create()
-
-    target_drivers = target_shape_keys.animation_data.drivers
 
     # Creates new shapekeys from the base object onto the binded object
     for base_key in source_shape_keys.key_blocks:
-        if not (target_key := target_shape_keys.key_blocks.get(base_key.name)):
-            target_key = target_object.shape_key_add(name=base_key.name, from_mix=False)
+        if not target_shape_keys.key_blocks.get(base_key.name):
+            target_object.shape_key_add(name=base_key.name, from_mix=False)
 
-        if not getattr(target_shape_keys, "animation_data"):
-            target_shape_keys.animation_data_create()
+    setup_shapekey_drivers(source_object, target_object)
+
+
+def setup_shapekey_drivers(source_object: Object, target_object: Object):
+    source_shape_keys = source_object.data.shape_keys
+    target_shape_keys = target_object.data.shape_keys
+
+    if not getattr(target_shape_keys, "animation_data"):
+        target_shape_keys.animation_data_create()
+
+    create_driver(source_object, target_object, "OBJECT", "show_only_shape_key")
+
+    target_drivers = target_shape_keys.animation_data.drivers
+    for base_key in source_shape_keys.key_blocks:
+        if not (target_key := target_shape_keys.key_blocks.get(base_key.name)):
+            continue
 
         # Links the shapekey to a driver if no driver is found
         if target_drivers.find(f'key_blocks["{target_key.name}"].value'):
             continue
 
         # print(base_key, target_key)
-        create_driver(source_shape_keys, target_key)
+        create_driver(source_shape_keys, target_key, "KEY", "value")  # type: ignore
 
 
 def remove_leftover_shape_keys(source_object: Object, target_object: Object):
@@ -156,9 +178,9 @@ def move_shape_key(object: Object, shape_key: ShapeKey, target_index: int):
 
     # print(shape_key.name, index_shape_key.name)
     if shape_keys.animation_data.drivers.find(f'key_blocks["{shape_keys.name}"].value'):
-        create_driver(shape_keys, index_shape_key)
+        create_driver(shape_keys, index_shape_key, "KEY", "value")  # type: ignore
     else:
-        remove_driver(shape_keys, index_shape_key)
+        remove_driver(index_shape_key, shape_keys, "value")  # type: ignore
 
     shape_key_name = shape_key.name
     index_shape_key_name = index_shape_key.name
@@ -168,38 +190,38 @@ def move_shape_key(object: Object, shape_key: ShapeKey, target_index: int):
     index_shape_key.name = shape_key_name
 
 
-def create_driver(source_shape_keys: Key, shape_key: ShapeKey):
-    driver = shape_key.driver_add("value").driver
-    driver.expression = "sb_bind"
-    if var := driver.variables.get("sb_bind"):
+def create_driver(source_id: ID, target_id: ID, id_type: str, data_path: str, variable_name: str = "sb_bind"):
+    driver = target_id.driver_add(data_path).driver
+    driver.expression = variable_name
+    if var := driver.variables.get(variable_name):
         driver.variables.remove(var)
 
     var = driver.variables.new()
-    var.name = "sb_bind"
+    var.name = variable_name
     target = var.targets[0]
-    target.id_type = "KEY"
-    target.id = source_shape_keys
-    target.data_path = f'key_blocks["{shape_key.name}"].value'
+    target.id_type = id_type
+    target.id = source_id
+    target.data_path = f'key_blocks["{target_id.name}"].{data_path}'
 
 
-def update_driver(shape_keys: Key, driver: FCurve, name: str):
-    if not (var := driver.driver.variables.get("sb_bind")):
+def update_driver(source_id: ID, target_id: ID, driver: FCurve, data_path: str, variable_name: str = "sb_bind"):
+    if not (var := driver.driver.variables.get(variable_name)):
         return
 
     target = var.targets[0]
-    target.id = shape_keys
-    target.data_path = f'key_blocks["{name}"].value'
+    target.id = source_id
+    target.data_path = f'key_blocks["{target_id}"].{data_path}'
 
 
-def remove_driver(shape_keys: Key, shape_key: ShapeKey):
-    if not (driver := shape_keys.animation_data.drivers.find(f'key_blocks["{shape_key.name}"].value')):
+def remove_driver(source_id: ID, target_id: ID, data_path: str, variable_name: str = "sb_bind"):
+    if not (driver := target_id.animation_data.drivers.find(f'key_blocks["{source_id.name}"].{data_path}')):
         return
 
-    if var := driver.driver.variables.get("sb_bind"):
+    if var := driver.driver.variables.get(variable_name):
         driver.driver.variables.remove(var)
 
     if not len(driver.driver.variables):
-        shape_keys.animation_data.drivers.remove(driver)
+        target_id.animation_data.drivers.remove(driver)
 
 
 # endregion
@@ -264,7 +286,7 @@ class OSB_OT_unbind(Operator):
             # Clears shapekey drivers
             target_shape_keys = object.data.shape_keys
             for target_key in target_shape_keys.key_blocks:
-                remove_driver(target_shape_keys, target_key)
+                remove_driver(target_key, target_shape_keys, "value")  # type: ignore
 
         return {"FINISHED"}
 
@@ -294,7 +316,7 @@ class OSB_OT_purge(Operator):
             # Clears shapekey drivers
             target_shape_keys = object.data.shape_keys
             for target_key in target_shape_keys.key_blocks:
-                remove_driver(target_shape_keys, target_key)
+                remove_driver(target_shape_keys, target_key, "value")  # type: ignore
 
         return {"FINISHED"}
 
@@ -324,7 +346,10 @@ class OSB_PT_mainpanel(Panel):
         if not bpy.context.object.type == "MESH":
             return
 
-        col.prop(object.data.spparameters, "full_mirror")
+        SPPARAMETERS = object.data.spparameters
+
+        col.prop(SPPARAMETERS, "full_mirror")
+        col.prop(SPPARAMETERS, "drivers_only")
 
         if bpy.context.object.data.get("sp_binded_object"):
             box = layout.box()
