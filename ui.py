@@ -24,11 +24,6 @@ class OSB_PT_mainpanel(Panel):
         if not bpy.context.object.type == "MESH":
             return
 
-        SPPARAMETERS = object.data.spparameters
-
-        col.prop(SPPARAMETERS, "full_mirror")
-        col.prop(SPPARAMETERS, "drivers_only")
-
         if bpy.context.object.data.get("sp_binded_object"):
             box = layout.box()
             box.label(text=f"Binded to: {bpy.context.object.data.get('sp_binded_object').name}")

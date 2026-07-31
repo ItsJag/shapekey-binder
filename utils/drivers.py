@@ -25,11 +25,15 @@ def update_driver(source_id: ID, target_id: ID, driver: FCurve, data_path: str, 
 
 
 def remove_driver(source_id: ID, target_id: ID, data_path: str, variable_name: str = "sb_bind"):
-    if not (driver := target_id.animation_data.drivers.find(f'key_blocks["{source_id.name}"].{data_path}')):
-        return
+    try:
+        if getattr(target_id, "animation_data"):
+            if not (driver := target_id.animation_data.drivers.find(f'key_blocks["{source_id.name}"].{data_path}')):
+                return
 
-    if var := driver.driver.variables.get(variable_name):
-        driver.driver.variables.remove(var)
+            if var := driver.driver.variables.get(variable_name):
+                driver.driver.variables.remove(var)
 
-    if not len(driver.driver.variables):
-        target_id.animation_data.drivers.remove(driver)
+            if not len(driver.driver.variables):
+                target_id.animation_data.drivers.remove(driver)
+    except:
+        pass

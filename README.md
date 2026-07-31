@@ -1,19 +1,16 @@
-# What it Does
+# What is this?
 
-It mirrors and links shapekeys between objects, so they're always in sync.
+This is a forked repo of Haggets' shapekey-binder project.
+Their project is very useful to my work, but a lot of the features within don't overlap with my needs, and the constant calling of the update function is causing some unintended behaviours within blender that are preventing me from working.
+So this is a trimmed down version of the project, tweaked to suit my needs.
 
-In other words:
+# How it differs
 
-- If the target object doesn't have shapekeys the source object has, it'll create them for the target object and automatically link them through drivers.
-- If shapekeys are deleted in the source object, they'll also be deleted in the target objects.
-- If the target objects have additional shapekeys that are not in the active object, they'll be deleted when binded (Otherwise they can kept by untoggling "Full Shapekey Mirror")
+It simply creates drivers between all mirrored shapekeys between objects.
+It doesn't "bind" the objects like the original project, it doesn't add or remove shapekeys at all. 
+
 
 # Where to Find it
 
 Properties > Object Properties (Green triangle) > Shapekey Binder
 
-# Caveats
-
-This plugin was mainly made for myself, so it may have some issues. Here's some stuff i'm aware of:
-
-- There may be a bit of slowdown when creating new shapekeys on the active object.
